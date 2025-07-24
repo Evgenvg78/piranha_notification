@@ -1,5 +1,5 @@
 import time
-nano /root/quik_monitiring/new_flask_server_taker_1.pyimport requests
+import requests
 import logging
 import threading
 from flask import Flask
