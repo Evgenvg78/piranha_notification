@@ -289,6 +289,28 @@ def analyze_log(data: dict, server_cfg, state):
 
     last_data["lastTradeTime"] = trade_time
 
+# Пример: [(start_hour, start_minute, end_hour, end_minute)]
+PAUSE_SCHEDULE = [
+    (0, 0, 9, 0),     # 00:00 - 09:00
+    (13, 59, 14, 5),  # 13:59 - 14:05
+    (18, 49, 19, 5),  # 18:49 - 19:05
+    (23, 49, 0, 0),   # 23:49 - 00:00 (через полночь)
+]
+
+def is_pause_time():
+    now = datetime.now()
+    now_minutes = now.hour * 60 + now.minute
+    for start_h, start_m, end_h, end_m in PAUSE_SCHEDULE:
+        start_minutes = start_h * 60 + start_m
+        end_minutes = end_h * 60 + end_m
+        if start_minutes <= end_minutes:
+            if start_minutes <= now_minutes < end_minutes:
+                return True
+        else:  # Интервал через полночь
+            if now_minutes >= start_minutes or now_minutes < end_minutes:
+                return True
+    return False
+
 def background_log_checker(server_cfg, state):
     """
     Фоновая задача для конкретного сервера:
@@ -298,6 +320,10 @@ def background_log_checker(server_cfg, state):
     """
     server_name = server_cfg["name"]
     while True:
+        if is_pause_time():
+            logging.info(f"[{server_name}] Мониторинг приостановлен по расписанию.")
+            time.sleep(CHECK_INTERVAL)
+            continue
         logs = fetch_logs(server_cfg)
         if logs:
             lines = [line for line in logs.split("\n") if line.strip()]
