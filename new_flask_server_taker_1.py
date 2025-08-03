@@ -351,6 +351,33 @@ def background_log_checker(server_cfg, state):
 
         time.sleep(CHECK_INTERVAL)
 
+def check_and_notify_trading_start():
+    """Проверяет состояние серверов в 9:01 и отправляет уведомление, если всё в норме."""
+    while True:
+        now = datetime.now()
+        # Следующая цель — сегодня в 9:01:00, либо завтра, если уже позже
+        target = now.replace(hour=9, minute=1, second=0, microsecond=0)
+        if now >= target:
+            # Если уже позже 9:01, ждём до следующего дня
+            target = target.replace(day=now.day + 1)
+        time_to_wait = (target - now).total_seconds()
+        if time_to_wait > 0:
+            time.sleep(time_to_wait)
+        # Проверяем состояние каждого сервера
+        for server in SERVERS:
+            state = server_states[server["name"]]
+            last_data = state["last_data"]
+            active_errors = state["active_errors"]
+            # Данные должны быть свежими (например, не старше 2*CHECK_INTERVAL)
+            data_fresh = (time.time() - last_data["last_received"]) < 2 * CHECK_INTERVAL
+            no_errors = not any(active_errors.values())
+            if data_fresh and no_errors:
+                add_notification(server["name"], "Торги запущены➡️, все показатели в норме 😉")
+            else:
+                logging.info(f"[{server['name']}] Не все показатели в норме или нет свежих данных для утреннего уведомления.")
+        # Ждём сутки до следующей проверки
+        time.sleep(24 * 60 * 60)
+
 # ------------------ ЗАПУСК СЕРВЕРА ------------------
 
 # Запускаем обработчик логов для каждого сервера
@@ -366,7 +393,9 @@ if __name__ == '__main__':
         time.sleep(5)
         for server in SERVERS:
             add_notification(server["name"], f"🔔 Тест: бот работает и умеет отправлять сообщения для {server['name']}")
-
     threading.Thread(target=delayed_test_notification, daemon=True).start()
+
+    # Запуск проверки состояния в 9:01
+    threading.Thread(target=check_and_notify_trading_start, daemon=True).start()
 
     app.run(host='0.0.0.0', port=5000)
