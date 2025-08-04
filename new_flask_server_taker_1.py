@@ -212,6 +212,9 @@ def analyze_log(data: dict, server_cfg, state):
     last_data["connectionStatus"] = data["connectionStatus"]
     last_data["balance"] = data["balance"]
     last_data["planNetPositions"] = data["planNetPositions"]
+    last_data["LongPositions"] = data.get("LongPositions")
+    last_data["ShortPositions"] = data.get("ShortPositions")
+    last_data["netPositions"] = data.get("netPositions")
     last_data["last_received"] = time.time()
 
     # --- 1. Проверка доступности сервера (ping) ---
