@@ -461,7 +461,7 @@ async def start_polling_bot():
     application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CallbackQueryHandler(status_button))
     print("Telegram polling bot started!")
-    await application.run_async()
+    await application.run_polling(stop_signals=None)
 
 # Запускать polling только если это основной процесс
 if __name__ == '__main__':
