@@ -11,6 +11,10 @@ import asyncio
 import logging
 from threading import Lock  # Импортируем Lock
 
+# --- ДОБАВЛЕНО: Telegram polling с командой /status ---
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Updater, CommandHandler, CallbackQueryHandler, CallbackContext
+
 # ------------------ НАСТРОЙКИ ------------------
 # Загружаем переменные из .env
 load_dotenv()
@@ -161,7 +165,10 @@ def parse_log_line(line: str):
                 "connectionStatus": parts[1].strip(),
                 "balance": float(parts[2].strip()),
                 "planNetPositions": float(parts[3].strip()),
-                "lastTradeInfo": parts[4].strip()  # Ожидается время сделки в формате HH:MM:SS или "нет данных"
+                "lastTradeInfo": parts[4].strip(),
+                "LongPositions": float(parts[5].strip()),
+                "ShortPositions": float(parts[6].strip()),
+                "netPositions": float(parts[7].strip())  # ожидается чистые позиции в рублях
             }
         except ValueError:
             logging.warning(f"Ошибка преобразования типов в строке лога: {line}")
@@ -378,6 +385,12 @@ def check_and_notify_trading_start():
         # Ждём сутки до следующей проверки
         time.sleep(24 * 60 * 60)
 
+# --- Функция для тестового уведомления ---
+def delayed_test_notification():
+    time.sleep(5)
+    for server in SERVERS:
+        add_notification(server["name"], f"🔔 Тест: бот работает и умеет отправлять сообщения для {server['name']}")
+
 # ------------------ ЗАПУСК СЕРВЕРА ------------------
 
 # Запускаем обработчик логов для каждого сервера
@@ -388,14 +401,73 @@ for server in SERVERS:
         daemon=True
     ).start()
 
+# --- ДОБАВЛЕНО: Telegram polling с командой /status ---
+# Функция для формирования статуса по серверу
+
+def get_server_status(server_name):
+    server_cfg = next((s for s in SERVERS if s["name"] == server_name), None)
+    if not server_cfg:
+        return f"Сервер {server_name} не найден."
+    state = server_states[server_name]
+    last_data = state["last_data"]
+    # 1. Проверка доступности сервера (ping)
+    ping_ok = ping_quik_server(server_cfg)
+    ping_status = "✅ Сервер доступен" if ping_ok else "❌ Сервер недоступен (ping)"
+    # 2. Статус подключения QUIK
+    quik_status = last_data["connectionStatus"]
+    quik_status_str = "✅ QUIK подключен" if str(quik_status).lower() == "true" else "❌ QUIK не подключен"
+    # 3. Баланс
+    balance = last_data.get("balance")
+    # 4. Свободное ГО
+    planNetPositions = last_data.get("planNetPositions")
+    # 5. Лонги, шорты, нетто
+    long_pos = last_data.get("LongPositions")
+    short_pos = last_data.get("ShortPositions")
+    net_pos = last_data.get("netPositions")
+    # Формируем текст
+    msg = (
+        f"<b>Статус сервера: {server_name}</b>\n"
+        f"{ping_status}\n"
+        f"{quik_status_str}\n"
+        f"Баланс: <b>{balance}</b>\n"
+        f"Свободное ГО: <b>{planNetPositions}</b>\n"
+        f"Лонги: <b>{long_pos}</b>\n"
+        f"Шорты: <b>{short_pos}</b>\n"
+        f"Нетто позиция: <b>{net_pos}</b>\n"
+    )
+    return msg
+
+# Команда /status
+
+def status_command(update: Update, context: CallbackContext):
+    keyboard = [[InlineKeyboardButton(s["name"], callback_data=f'status_{s["name"]}')]
+                for s in SERVERS]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    update.message.reply_text(
+        "От какого сервера хотите получить данные?",
+        reply_markup=reply_markup
+    )
+
+def status_button(update: Update, context: CallbackContext):
+    query = update.callback_query
+    query.answer()
+    if query.data.startswith('status_'):
+        server_name = query.data.replace('status_', '')
+        msg = get_server_status(server_name)
+        query.edit_message_text(text=msg, parse_mode='HTML')
+
+# --- Запуск polling Telegram-бота ---
+def start_polling_bot():
+    updater = Updater(token=TELEGRAM_BOT_TOKEN, use_context=True)
+    dp = updater.dispatcher
+    dp.add_handler(CommandHandler("status", status_command))
+    dp.add_handler(CallbackQueryHandler(status_button))
+    updater.start_polling()
+    print("Telegram polling bot started!")
+
+# Запускать polling только если это основной процесс
 if __name__ == '__main__':
-    def delayed_test_notification():
-        time.sleep(5)
-        for server in SERVERS:
-            add_notification(server["name"], f"🔔 Тест: бот работает и умеет отправлять сообщения для {server['name']}")
     threading.Thread(target=delayed_test_notification, daemon=True).start()
-
-    # Запуск проверки состояния в 9:01
     threading.Thread(target=check_and_notify_trading_start, daemon=True).start()
-
+    threading.Thread(target=start_polling_bot, daemon=True).start()
     app.run(host='0.0.0.0', port=5000)
