@@ -166,9 +166,9 @@ def parse_log_line(line: str):
                 "balance": float(parts[2].strip()),
                 "planNetPositions": float(parts[3].strip()),
                 "lastTradeInfo": parts[4].strip(),
-                "LongPositions": float(parts[5].strip()),
-                "ShortPositions": float(parts[6].strip()),
-                "netPositions": float(parts[7].strip())  # ожидается чистые позиции в рублях
+                "LongPositions": float(parts[8].strip()),
+                "ShortPositions": float(parts[9].strip()),
+                "netPositions": float(parts[10].strip())  # ожидается чистые позиции в рублях
             }
         except ValueError:
             logging.warning(f"Ошибка преобразования типов в строке лога: {line}")
