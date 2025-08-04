@@ -461,5 +461,7 @@ async def start_polling_bot():
 if __name__ == '__main__':
     threading.Thread(target=delayed_test_notification, daemon=True).start()
     threading.Thread(target=check_and_notify_trading_start, daemon=True).start()
-    threading.Thread(target=lambda: asyncio.run(start_polling_bot()), daemon=True).start()
-    app.run(host='0.0.0.0', port=5000)
+    # Flask теперь в отдельном потоке
+    threading.Thread(target=lambda: app.run(host='0.0.0.0', port=5000), daemon=True).start()
+    # polling-бот — в главном потоке
+    asyncio.run(start_polling_bot())
