@@ -456,21 +456,27 @@ async def status_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text=msg, parse_mode='HTML')
 
 # Запуск polling-бота (async)
-async def start_polling_bot():
+def start_polling_bot():
     application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
     application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CallbackQueryHandler(status_button))
     print("Telegram polling bot started!")
-    await application.run_polling(stop_signals=None)
+    application.run_polling(stop_signals=None)
 
 # Запускать polling только если это основной процесс
 if __name__ == '__main__':
     threading.Thread(target=delayed_test_notification, daemon=True).start()
     threading.Thread(target=check_and_notify_trading_start, daemon=True).start()
     
-    # Запускаем polling-бота в отдельном потоке с run_async()
+    # Запускаем polling-бота в отдельном потоке с правильной обработкой event loop
     def run_bot():
-        asyncio.run(start_polling_bot())
+        try:
+            # Создаём новый event loop для этого потока
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            start_polling_bot()
+        except Exception as e:
+            logging.error(f"Ошибка в polling-боте: {e}")
     
     threading.Thread(target=run_bot, daemon=True).start()
     
