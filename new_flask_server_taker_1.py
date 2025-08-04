@@ -15,6 +15,12 @@ from threading import Lock  # Импортируем Lock
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
+
+import sys
+print('PYTHON:', sys.executable)
+import pytz
+print('PYTZ:', pytz.__file__)
+
 # ------------------ НАСТРОЙКИ ------------------
 # Загружаем переменные из .env
 load_dotenv()
