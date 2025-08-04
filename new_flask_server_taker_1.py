@@ -467,7 +467,15 @@ async def start_polling_bot():
 if __name__ == '__main__':
     threading.Thread(target=delayed_test_notification, daemon=True).start()
     threading.Thread(target=check_and_notify_trading_start, daemon=True).start()
-    # Flask теперь в отдельном потоке
     threading.Thread(target=lambda: app.run(host='0.0.0.0', port=5000), daemon=True).start()
-    # polling-бот — в главном потоке
-    asyncio.run(start_polling_bot())
+
+    import asyncio
+    try:
+        asyncio.run(start_polling_bot())
+    except RuntimeError as e:
+        if "event loop is closed" in str(e) or "Cannot close a running event loop" in str(e):
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(start_polling_bot())
+        else:
+            raise
