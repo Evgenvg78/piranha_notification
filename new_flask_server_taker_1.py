@@ -164,7 +164,7 @@ def parse_log_line(line: str):
     Если строка имеет неверный формат – возвращает None.
     """
     parts = line.strip().split(";")
-    if len(parts) >= 5:
+    if len(parts) >= 8:  # минимально ожидаемое количество частей
         try:
             return {
                 "timestamp": parts[0].strip(),
@@ -172,9 +172,10 @@ def parse_log_line(line: str):
                 "balance": float(parts[2].strip()),
                 "planNetPositions": float(parts[3].strip()),
                 "lastTradeInfo": parts[4].strip(),
-                "LongPositions": float(parts[8].strip()),
-                "ShortPositions": float(parts[9].strip()),
-                "netPositions": float(parts[10].strip())  # ожидается чистые позиции в рублях
+                # ... другие поля по необходимости ...
+                "LongPositions": float(parts[-3].strip()) if parts[-3].strip() else None,
+                "ShortPositions": float(parts[-2].strip()) if parts[-2].strip() else None,
+                "netPositions": float(parts[-1].strip()) if parts[-1].strip() else None
             }
         except ValueError:
             logging.warning(f"Ошибка преобразования типов в строке лога: {line}")
