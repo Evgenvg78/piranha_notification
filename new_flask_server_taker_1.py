@@ -520,6 +520,7 @@ async def chart_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     import matplotlib.dates as mdates
     from datetime import datetime, time as dtime
     import pytz
+    import logging
 
     query = update.callback_query
     await query.answer()
@@ -527,16 +528,24 @@ async def chart_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         server_name = query.data.replace('chart_', '')
         server_cfg = next((s for s in SERVERS if s["name"] == server_name), None)
         if not server_cfg:
-            await query.edit_message_text("Сервер не найден.")
+            msg = "Сервер не найден."
+            print(msg)
+            logging.info(msg)
+            await query.edit_message_text(msg)
             return
         log_text = fetch_logs(server_cfg)
         if not log_text:
-            await query.edit_message_text("Не удалось получить лог с сервера.")
+            msg = "Не удалось получить лог с сервера."
+            print(msg)
+            logging.info(msg)
+            await query.edit_message_text(msg)
             return
         # Парсим строки
         lines = log_text.splitlines()
         parsed = [parse_log_line(line) for line in lines]
         parsed = [p for p in parsed if p]
+        print(f"DEBUG: Всего строк в логе: {len(lines)}; успешно распарсено: {len(parsed)}")
+        logging.info(f"DEBUG: Всего строк в логе: {len(lines)}; успешно распарсено: {len(parsed)}")
         # Фильтруем по времени (только сегодня)
         msk = pytz.timezone('Europe/Moscow')
         today = datetime.now(msk).date()
@@ -559,10 +568,17 @@ async def chart_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 dt = msk.localize(dt)
                 if dt.date() == today and in_intervals(dt):
                     filtered.append((dt, p["balance"]))
-            except Exception:
+            except Exception as e:
+                print(f"DEBUG: Ошибка парсинга времени: {e}")
+                logging.info(f"DEBUG: Ошибка парсинга времени: {e}")
                 continue
+        print(f"DEBUG: Строк после фильтрации по времени: {len(filtered)}")
+        logging.info(f"DEBUG: Строк после фильтрации по времени: {len(filtered)}")
         if not filtered:
-            await query.edit_message_text("Нет данных для построения эквити за сегодня.")
+            msg = "Нет данных для построения эквити за сегодня."
+            print(msg)
+            logging.info(msg)
+            await query.edit_message_text(msg)
             return
         # Баланс на 9:00
         balance_9 = None
@@ -573,35 +589,50 @@ async def chart_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if dt.date() == today and dt.time() >= dtime(9,0):
                     balance_9 = p["balance"]
                     break
-            except Exception:
+            except Exception as e:
+                print(f"DEBUG: Ошибка парсинга времени для баланса 9:00: {e}")
+                logging.info(f"DEBUG: Ошибка парсинга времени для баланса 9:00: {e}")
                 continue
+        print(f"DEBUG: Баланс на 9:00: {balance_9}")
+        logging.info(f"DEBUG: Баланс на 9:00: {balance_9}")
         if balance_9 is None:
-            await query.edit_message_text("Не найден баланс на 9:00.")
+            msg = "Не найден баланс на 9:00."
+            print(msg)
+            logging.info(msg)
+            await query.edit_message_text(msg)
             return
         # Строим эквити
         times = [dt for dt, bal in filtered]
         equity = [bal - balance_9 for dt, bal in filtered]
         final_equity = equity[-1]
+        print(f"DEBUG: Финальное эквити: {final_equity}")
+        logging.info(f"DEBUG: Финальное эквити: {final_equity}")
         # График
-        fig, ax = plt.subplots(figsize=(8,4))
-        ax.plot(times, equity, label="Эквити")
-        ax.axhline(0, color='gray', linestyle='--', linewidth=1)
-        ax.set_title(f"Эквити {server_name} за сегодня")
-        ax.set_xlabel("Время")
-        ax.set_ylabel("Эквити (руб)")
-        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M', tz=msk))
-        plt.xticks(rotation=45)
-        plt.tight_layout()
-        # Подпись финального значения
-        plt.figtext(0.5, -0.05, f"Финальное эквити: {final_equity:.2f} руб", ha="center", fontsize=12)
-        # В PNG
-        buf = io.BytesIO()
-        plt.savefig(buf, format='png')
-        buf.seek(0)
-        plt.close(fig)
-        # Отправляем
-        await query.message.reply_photo(photo=buf, caption=f"Эквити {server_name} за сегодня\nФинальное: {final_equity:.2f} руб")
-        await query.delete_message()
+        try:
+            fig, ax = plt.subplots(figsize=(8,4))
+            ax.plot(times, equity, label="Эквити")
+            ax.axhline(0, color='gray', linestyle='--', linewidth=1)
+            ax.set_title(f"Эквити {server_name} за сегодня")
+            ax.set_xlabel("Время")
+            ax.set_ylabel("Эквити (руб)")
+            ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M', tz=msk))
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            # Подпись финального значения
+            plt.figtext(0.5, -0.05, f"Финальное эквити: {final_equity:.2f} руб", ha="center", fontsize=12)
+            # В PNG
+            buf = io.BytesIO()
+            plt.savefig(buf, format='png')
+            buf.seek(0)
+            plt.close(fig)
+            # Отправляем
+            await query.message.reply_photo(photo=buf, caption=f"Эквити {server_name} за сегодня\nФинальное: {final_equity:.2f} руб")
+            await query.delete_message()
+        except Exception as e:
+            msg = f"Ошибка при построении или отправке графика: {e}"
+            print(msg)
+            logging.error(msg)
+            await query.edit_message_text(msg)
 
 # Запуск polling-бота (async)
 def start_polling_bot():
