@@ -638,10 +638,10 @@ async def chart_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def start_polling_bot():
     application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
     application.add_handler(CommandHandler("status", status_command))
-    application.add_handler(CallbackQueryHandler(status_button))
+    application.add_handler(CallbackQueryHandler(status_button, pattern="^status_"))
     # --- chart handlers ---
     application.add_handler(CommandHandler("chart", chart_command))
-    application.add_handler(CallbackQueryHandler(chart_button))
+    application.add_handler(CallbackQueryHandler(chart_button, pattern="^chart_"))
     print("Telegram polling bot started!")
     application.run_polling(stop_signals=None)
 
