@@ -369,7 +369,7 @@ def background_log_checker(server_cfg, state):
         time.sleep(CHECK_INTERVAL)
 
 def check_and_notify_trading_start():
-    """Проверяет состояние серверов в 9:01 и отправляет уведомление, если всё в норме."""
+    """Проверяет состояние серверов в 9:01 и отправляет детальный отчет по каждому пункту анализа."""
     while True:
         now = datetime.now()
         # Следующая цель — сегодня в 9:01:00, либо завтра, если уже позже
@@ -380,18 +380,64 @@ def check_and_notify_trading_start():
         time_to_wait = (target - now).total_seconds()
         if time_to_wait > 0:
             time.sleep(time_to_wait)
+        
         # Проверяем состояние каждого сервера
         for server in SERVERS:
             state = server_states[server["name"]]
             last_data = state["last_data"]
             active_errors = state["active_errors"]
-            # Данные должны быть свежими (например, не старше 2*CHECK_INTERVAL)
+            server_name = server["name"]
+            
+            # Проверяем свежесть данных
             data_fresh = (time.time() - last_data["last_received"]) < 2 * CHECK_INTERVAL
-            no_errors = not any(active_errors.values())
-            if data_fresh and no_errors:
-                add_notification(server["name"], "Торги запущены➡️, все показатели в норме 😉")
+            
+            # Формируем детальный отчет
+            report_lines = [f"📊 Отчет состояния сервера {server_name} на {now.strftime('%H:%M:%S')}:"]
+            
+            # 1. Проверка доступности сервера
+            if active_errors["server_down"]:
+                report_lines.append("❌ Сервер недоступен (ping не проходит)")
             else:
-                logging.info(f"[{server['name']}] Не все показатели в норме или нет свежих данных для утреннего уведомления.")
+                report_lines.append("✅ Сервер доступен")
+            
+            # 2. Проверка подключения Quik
+            if active_errors["connection"]:
+                report_lines.append("❌ Quik не подключен")
+            else:
+                report_lines.append("✅ Quik подключен")
+            
+            # 3. Проверка баланса
+            if active_errors["balance"]:
+                report_lines.append("❗ Баланс снизился более чем на 1%")
+            else:
+                report_lines.append("✅ Баланс в норме")
+            
+            # 4. Проверка плановых позиций
+            if active_errors["plan_positions_crit"]:
+                report_lines.append("❌ Свободное ГО на критическом уровне")
+            else:
+                report_lines.append("✅ Свободное ГО в норме")
+            
+            # 5. Проверка данных о сделках
+            if active_errors["trade_no_data"]:
+                report_lines.append("📉 Нет данных о сделках")
+            elif active_errors["trade_stuck"]:
+                report_lines.append("⛔ Данные о сделках не обновляются")
+            elif active_errors["trade_delay"]:
+                report_lines.append("⚠️ Задержка обновления сделок")
+            else:
+                report_lines.append("✅ Данные о сделках в норме")
+            
+            # 6. Проверка свежести данных
+            if not data_fresh:
+                report_lines.append("⚠️ Данные устарели (нет свежих данных)")
+            else:
+                report_lines.append("✅ Данные актуальны")
+            
+            # Отправляем отчет
+            report_message = "\n".join(report_lines)
+            add_notification(server_name, report_message)
+            
         # Ждём сутки до следующей проверки
         time.sleep(24 * 60 * 60)
 
