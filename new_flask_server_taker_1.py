@@ -505,11 +505,112 @@ async def status_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         msg = get_server_status(server_name)
         await query.edit_message_text(text=msg, parse_mode='HTML')
 
+async def chart_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [[InlineKeyboardButton(s["name"], callback_data=f'chart_{s["name"]}')]
+                for s in SERVERS]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        "Для какого сервера построить эквити?",
+        reply_markup=reply_markup
+    )
+
+async def chart_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    import io
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+    from datetime import datetime, time as dtime
+    import pytz
+
+    query = update.callback_query
+    await query.answer()
+    if query.data.startswith('chart_'):
+        server_name = query.data.replace('chart_', '')
+        server_cfg = next((s for s in SERVERS if s["name"] == server_name), None)
+        if not server_cfg:
+            await query.edit_message_text("Сервер не найден.")
+            return
+        log_text = fetch_logs(server_cfg)
+        if not log_text:
+            await query.edit_message_text("Не удалось получить лог с сервера.")
+            return
+        # Парсим строки
+        lines = log_text.splitlines()
+        parsed = [parse_log_line(line) for line in lines]
+        parsed = [p for p in parsed if p]
+        # Фильтруем по времени (только сегодня)
+        msk = pytz.timezone('Europe/Moscow')
+        today = datetime.now(msk).date()
+        intervals = [
+            (dtime(9,0), dtime(13,59)),
+            (dtime(14,6), dtime(18,48)),
+            (dtime(19,6), dtime(23,49)),
+        ]
+        def in_intervals(dt):
+            t = dt.time()
+            for start, end in intervals:
+                if start <= t <= end:
+                    return True
+            return False
+        # Преобразуем timestamp в datetime и фильтруем
+        filtered = []
+        for p in parsed:
+            try:
+                dt = datetime.strptime(p["timestamp"], "%Y-%m-%d %H:%M:%S")
+                dt = msk.localize(dt)
+                if dt.date() == today and in_intervals(dt):
+                    filtered.append((dt, p["balance"]))
+            except Exception:
+                continue
+        if not filtered:
+            await query.edit_message_text("Нет данных для построения эквити за сегодня.")
+            return
+        # Баланс на 9:00
+        balance_9 = None
+        for p in parsed:
+            try:
+                dt = datetime.strptime(p["timestamp"], "%Y-%m-%d %H:%M:%S")
+                dt = msk.localize(dt)
+                if dt.date() == today and dt.time() >= dtime(9,0):
+                    balance_9 = p["balance"]
+                    break
+            except Exception:
+                continue
+        if balance_9 is None:
+            await query.edit_message_text("Не найден баланс на 9:00.")
+            return
+        # Строим эквити
+        times = [dt for dt, bal in filtered]
+        equity = [bal - balance_9 for dt, bal in filtered]
+        final_equity = equity[-1]
+        # График
+        fig, ax = plt.subplots(figsize=(8,4))
+        ax.plot(times, equity, label="Эквити")
+        ax.axhline(0, color='gray', linestyle='--', linewidth=1)
+        ax.set_title(f"Эквити {server_name} за сегодня")
+        ax.set_xlabel("Время")
+        ax.set_ylabel("Эквити (руб)")
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M', tz=msk))
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        # Подпись финального значения
+        plt.figtext(0.5, -0.05, f"Финальное эквити: {final_equity:.2f} руб", ha="center", fontsize=12)
+        # В PNG
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png')
+        buf.seek(0)
+        plt.close(fig)
+        # Отправляем
+        await query.message.reply_photo(photo=buf, caption=f"Эквити {server_name} за сегодня\nФинальное: {final_equity:.2f} руб")
+        await query.delete_message()
+
 # Запуск polling-бота (async)
 def start_polling_bot():
     application = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
     application.add_handler(CommandHandler("status", status_command))
     application.add_handler(CallbackQueryHandler(status_button))
+    # --- chart handlers ---
+    application.add_handler(CommandHandler("chart", chart_command))
+    application.add_handler(CallbackQueryHandler(chart_button))
     print("Telegram polling bot started!")
     application.run_polling(stop_signals=None)
 
